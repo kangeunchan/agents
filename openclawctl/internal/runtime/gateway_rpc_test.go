@@ -13,6 +13,7 @@ import (
 
 func newGatewayClientForTest(t *testing.T, handler http.HandlerFunc) *GatewayClient {
 	t.Helper()
+	t.Setenv("OPENCLAW_STATE_DIR", t.TempDir())
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
@@ -37,7 +38,11 @@ func writeWSFrame(t *testing.T, conn *websocket.Conn, frame map[string]any) {
 	}
 }
 
-func completeWSConnectHandshake(t *testing.T, conn *websocket.Conn) {
+func completeWSConnectHandshake(t *testing.T, conn *websocket.Conn) map[string]any {
+	return completeWSConnectHandshakeWithPayload(t, conn, nil)
+}
+
+func completeWSConnectHandshakeWithPayload(t *testing.T, conn *websocket.Conn, helloPayload map[string]any) map[string]any {
 	t.Helper()
 
 	writeWSFrame(t, conn, map[string]any{
@@ -54,13 +59,31 @@ func completeWSConnectHandshake(t *testing.T, conn *websocket.Conn) {
 	if strings.TrimSpace(connectID) == "" {
 		t.Fatalf("connect request id is empty: %#v", connectReq)
 	}
+	params, ok := connectReq["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("connect params missing: %#v", connectReq)
+	}
+	device, ok := params["device"].(map[string]any)
+	if !ok {
+		t.Fatalf("connect device missing: %#v", params)
+	}
+	for _, field := range []string{"id", "publicKey", "signature"} {
+		value, _ := device[field].(string)
+		if strings.TrimSpace(value) == "" {
+			t.Fatalf("connect device.%s missing: %#v", field, device)
+		}
+	}
 
+	if helloPayload == nil {
+		helloPayload = map[string]any{"type": "hello-ok"}
+	}
 	writeWSFrame(t, conn, map[string]any{
 		"type":    "res",
 		"id":      connectID,
 		"ok":      true,
-		"payload": map[string]any{"type": "hello-ok"},
+		"payload": helloPayload,
 	})
+	return connectReq
 }
 
 func TestCallMarksUnsupportedTransport(t *testing.T) {
@@ -130,6 +153,93 @@ func TestGetConfigFallsBackToWebSocket(t *testing.T) {
 	}
 	if gateway["mode"] != "local" {
 		t.Fatalf("unexpected gateway mode: %#v", gateway["mode"])
+	}
+}
+
+func TestConnectStoresAndReusesDeviceToken(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	var mu sync.Mutex
+	var connectTokens []string
+	handshakeCount := 0
+
+	client := newGatewayClientForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rpc" {
+			http.NotFound(w, r)
+			return
+		}
+		if websocket.IsWebSocketUpgrade(r) {
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				t.Fatalf("upgrade websocket: %v", err)
+			}
+			defer conn.Close()
+
+			mu.Lock()
+			handshakeCount++
+			currentHandshake := handshakeCount
+			mu.Unlock()
+
+			var hello map[string]any
+			if currentHandshake == 1 {
+				hello = map[string]any{
+					"type": "hello-ok",
+					"auth": map[string]any{
+						"deviceToken": "device-token-1",
+						"role":        "operator",
+						"scopes":      []string{"operator.admin"},
+					},
+				}
+			}
+			connectReq := completeWSConnectHandshakeWithPayload(t, conn, hello)
+
+			params, _ := connectReq["params"].(map[string]any)
+			auth, _ := params["auth"].(map[string]any)
+			authToken, _ := auth["token"].(string)
+			mu.Lock()
+			connectTokens = append(connectTokens, authToken)
+			mu.Unlock()
+
+			req := readWSFrame(t, conn)
+			if req["method"] != "config.get" {
+				t.Fatalf("expected config.get request, got: %#v", req)
+			}
+			reqID, _ := req["id"].(string)
+			writeWSFrame(t, conn, map[string]any{
+				"type": "res",
+				"id":   reqID,
+				"ok":   true,
+				"payload": map[string]any{
+					"hash": "h1",
+					"raw":  "{\n  \"gateway\": {\"mode\": \"local\"}\n}\n",
+					"config": map[string]any{
+						"gateway": map[string]any{"mode": "local"},
+					},
+				},
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte("Method Not Allowed"))
+	})
+
+	if _, err := client.GetConfig(context.Background()); err != nil {
+		t.Fatalf("first GetConfig returned error: %v", err)
+	}
+	if _, err := client.GetConfig(context.Background()); err != nil {
+		t.Fatalf("second GetConfig returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(connectTokens) != 2 {
+		t.Fatalf("expected 2 connect handshakes, got %d", len(connectTokens))
+	}
+	if connectTokens[0] != "test-token" {
+		t.Fatalf("expected first connect to use shared token, got %q", connectTokens[0])
+	}
+	if connectTokens[1] != "device-token-1" {
+		t.Fatalf("expected second connect to use stored device token, got %q", connectTokens[1])
 	}
 }
 

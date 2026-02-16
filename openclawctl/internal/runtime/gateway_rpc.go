@@ -77,6 +77,17 @@ type wsRequestFrame struct {
 	Params any    `json:"params,omitempty"`
 }
 
+type wsHelloAuth struct {
+	DeviceToken string   `json:"deviceToken"`
+	Role        string   `json:"role"`
+	Scopes      []string `json:"scopes"`
+}
+
+type wsHelloPayload struct {
+	Type string       `json:"type"`
+	Auth *wsHelloAuth `json:"auth,omitempty"`
+}
+
 type RPCStatusError struct {
 	Method     string
 	StatusCode int
@@ -348,6 +359,23 @@ func (c *GatewayClient) callWS(ctx context.Context, method string, params any, o
 		return fmt.Errorf("resolve websocket url: %w", err)
 	}
 
+	identity, err := loadOrCreateDeviceIdentity()
+	if err != nil {
+		return fmt.Errorf("load device identity: %w", err)
+	}
+	role := "operator"
+	scopes := []string{"operator.admin", "operator.approvals", "operator.pairing"}
+	storedToken, err := loadDeviceAuthToken(identity.DeviceID, role)
+	if err != nil {
+		return fmt.Errorf("load device auth token: %w", err)
+	}
+	authToken := strings.TrimSpace(c.Token)
+	canFallbackToShared := false
+	if storedToken != nil && strings.TrimSpace(storedToken.Token) != "" {
+		authToken = strings.TrimSpace(storedToken.Token)
+		canFallbackToShared = strings.TrimSpace(c.Token) != ""
+	}
+
 	header := http.Header{}
 	c.attachAuthHeaders(header)
 
@@ -378,17 +406,45 @@ func (c *GatewayClient) callWS(ctx context.Context, method string, params any, o
 		return err
 	}
 
+	connectParams, err := c.wsConnectParams(identity, nonce, role, scopes, authToken)
+	if err != nil {
+		return fmt.Errorf("build connect params: %w", err)
+	}
+
 	connectID := randomFrameID()
 	if err := c.wsWriteJSON(ctx, conn, wsRequestFrame{
 		Type:   "req",
 		ID:     connectID,
 		Method: "connect",
-		Params: c.wsConnectParams(nonce),
+		Params: connectParams,
 	}); err != nil {
 		return fmt.Errorf("send connect request: %w", err)
 	}
-	if _, err := c.waitForWSResponse(ctx, conn, connectID, "connect"); err != nil {
+	connectPayload, err := c.waitForWSResponse(ctx, conn, connectID, "connect")
+	if err != nil {
+		if canFallbackToShared {
+			_ = clearDeviceAuthToken(identity.DeviceID, role)
+		}
 		return fmt.Errorf("connect request failed: %w", err)
+	}
+	if len(connectPayload) > 0 && string(connectPayload) != "null" {
+		var hello wsHelloPayload
+		if err := json.Unmarshal(connectPayload, &hello); err == nil && hello.Auth != nil {
+			deviceToken := strings.TrimSpace(hello.Auth.DeviceToken)
+			if deviceToken != "" {
+				tokenRole := role
+				if strings.TrimSpace(hello.Auth.Role) != "" {
+					tokenRole = strings.TrimSpace(hello.Auth.Role)
+				}
+				tokenScopes := scopes
+				if len(hello.Auth.Scopes) > 0 {
+					tokenScopes = hello.Auth.Scopes
+				}
+				if err := storeDeviceAuthToken(identity.DeviceID, tokenRole, deviceToken, tokenScopes); err != nil {
+					return fmt.Errorf("store device auth token: %w", err)
+				}
+			}
+		}
 	}
 
 	reqID := randomFrameID()
@@ -500,7 +556,7 @@ func (c *GatewayClient) wsWriteJSON(ctx context.Context, conn *websocket.Conn, f
 	return nil
 }
 
-func (c *GatewayClient) wsConnectParams(_ string) map[string]any {
+func (c *GatewayClient) wsConnectParams(identity *gatewayDeviceIdentity, nonce string, role string, scopes []string, authToken string) (map[string]any, error) {
 	client := map[string]any{
 		"id":         "cli",
 		"version":    "openclawctl-dev",
@@ -512,13 +568,13 @@ func (c *GatewayClient) wsConnectParams(_ string) map[string]any {
 		"minProtocol": 3,
 		"maxProtocol": 3,
 		"client":      client,
-		"role":        "operator",
-		"scopes":      []string{"operator.admin", "operator.approvals", "operator.pairing"},
+		"role":        role,
+		"scopes":      scopes,
 	}
 
 	auth := map[string]any{}
-	if strings.TrimSpace(c.Token) != "" {
-		auth["token"] = strings.TrimSpace(c.Token)
+	if strings.TrimSpace(authToken) != "" {
+		auth["token"] = strings.TrimSpace(authToken)
 	}
 	if strings.TrimSpace(c.Password) != "" {
 		auth["password"] = strings.TrimSpace(c.Password)
@@ -526,7 +582,40 @@ func (c *GatewayClient) wsConnectParams(_ string) map[string]any {
 	if len(auth) > 0 {
 		params["auth"] = auth
 	}
-	return params
+
+	if identity != nil {
+		signedAtMS := time.Now().UnixMilli()
+		payload := buildDeviceAuthPayload(deviceAuthPayloadParams{
+			DeviceID:   identity.DeviceID,
+			ClientID:   "cli",
+			ClientMode: "cli",
+			Role:       role,
+			Scopes:     scopes,
+			SignedAtMS: signedAtMS,
+			Token:      strings.TrimSpace(authToken),
+			Nonce:      strings.TrimSpace(nonce),
+		})
+		signature, err := signDevicePayload(identity.PrivateKeyPEM, payload)
+		if err != nil {
+			return nil, err
+		}
+		publicKey, err := publicKeyRawBase64URLFromPEM(identity.PublicKeyPEM)
+		if err != nil {
+			return nil, err
+		}
+		device := map[string]any{
+			"id":        identity.DeviceID,
+			"publicKey": publicKey,
+			"signature": signature,
+			"signedAt":  signedAtMS,
+		}
+		if strings.TrimSpace(nonce) != "" {
+			device["nonce"] = strings.TrimSpace(nonce)
+		}
+		params["device"] = device
+	}
+
+	return params, nil
 }
 
 func (c *GatewayClient) UIReachable(ctx context.Context) (bool, error) {
