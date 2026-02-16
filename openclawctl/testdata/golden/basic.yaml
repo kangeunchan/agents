@@ -1,0 +1,37 @@
+apiVersion: openclawctl/v1
+metadata:
+  name: openclaw-local
+gateway:
+  mode: local
+  bind: 127.0.0.1
+  port: 18789
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+providers:
+  primary:
+    type: openai
+    model: gpt-5-mini
+    endpoint: https://api.openai.com/v1
+    apiKeyEnv: ${OPENAI_API_KEY}
+channels:
+  default:
+    provider: primary
+    model: gpt-5-mini
+    temperature: 0.2
+routing:
+  defaultChannel: default
+agents:
+  defaults:
+    memorySearch:
+      enabled: false
+auth:
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+logging:
+  level: info
+  format: json
+runtime:
+  containerName: openclaw-gateway
+  image: openclaw-gateway:local
+  composeFile: openclaw/docker-compose.dev.yaml
+  configPath: .openclawctl/openclaw.json
+  stateDir: /var/lib/openclaw
+  stateVolume: openclaw_state

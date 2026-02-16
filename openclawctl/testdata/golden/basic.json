@@ -1,0 +1,50 @@
+{
+  "agents": {
+    "defaults": {
+      "memorySearch": {
+        "enabled": false
+      },
+      "model": {
+        "primary": "openai/gpt-5-mini"
+      },
+      "models": {
+        "openai/gpt-5-mini": {
+          "alias": "gpt-5-mini"
+        }
+      }
+    }
+  },
+  "gateway": {
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "bind": "loopback",
+    "controlUi": {
+      "basePath": "/",
+      "enabled": true
+    },
+    "mode": "local",
+    "port": 18789
+  },
+  "logging": {
+    "consoleStyle": "json",
+    "level": "info"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "primary": {
+        "api": "openai",
+        "apiKey": "${OPENAI_API_KEY}",
+        "baseUrl": "https://api.openai.com/v1",
+        "models": [
+          {
+            "id": "gpt-5-mini",
+            "name": "gpt-5-mini"
+          }
+        ]
+      }
+    }
+  }
+}
