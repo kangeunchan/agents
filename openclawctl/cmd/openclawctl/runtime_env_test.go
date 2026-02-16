@@ -29,13 +29,15 @@ func TestIsChatChannelEnabled(t *testing.T) {
 func TestEnsureRuntimeEnvLoadsFromDotEnv(t *testing.T) {
 	t.Setenv("OPENCLAW_GATEWAY_TOKEN", "")
 	t.Setenv("DISCORD_BOT_TOKEN", "")
+	t.Setenv("OPENCLAW_AI_WORKTREE", "")
+	t.Setenv("OPENCLAW_MAIN_REPO_PATH", "")
 
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "manifast.yaml")
 	if err := os.WriteFile(manifestPath, []byte("apiVersion: openclawctl/v1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENCLAW_GATEWAY_TOKEN=abc123\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENCLAW_GATEWAY_TOKEN=abc123\nOPENCLAW_AI_WORKTREE=/tmp/agents-ai\nOPENCLAW_MAIN_REPO_PATH=/tmp/agents\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,6 +54,12 @@ func TestEnsureRuntimeEnvLoadsFromDotEnv(t *testing.T) {
 	}
 	if result.Values["OPENCLAW_GATEWAY_TOKEN"] != "abc123" {
 		t.Fatalf("expected OPENCLAW_GATEWAY_TOKEN from .env, got %#v", result.Values["OPENCLAW_GATEWAY_TOKEN"])
+	}
+	if result.Values["OPENCLAW_AI_WORKTREE"] != "/tmp/agents-ai" {
+		t.Fatalf("expected OPENCLAW_AI_WORKTREE from .env, got %#v", result.Values["OPENCLAW_AI_WORKTREE"])
+	}
+	if result.Values["OPENCLAW_MAIN_REPO_PATH"] != "/tmp/agents" {
+		t.Fatalf("expected OPENCLAW_MAIN_REPO_PATH from .env, got %#v", result.Values["OPENCLAW_MAIN_REPO_PATH"])
 	}
 }
 

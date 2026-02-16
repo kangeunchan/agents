@@ -24,6 +24,8 @@ func ensureRuntimeEnv(manifest *v1.Manifest, requireGatewayToken bool) (runtimeE
 		"DISCORD_BOT_TOKEN",
 		"OPENCLAW_GIT_USER_NAME",
 		"OPENCLAW_GIT_USER_EMAIL",
+		"OPENCLAW_AI_WORKTREE",
+		"OPENCLAW_MAIN_REPO_PATH",
 	}
 	if isChatChannelEnabled(manifest.ChatChannels, "discord") {
 		required = append(required, "DISCORD_BOT_TOKEN")
