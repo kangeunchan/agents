@@ -1,0 +1,58 @@
+services:
+  openclaw-gateway:
+    build:
+      context: ..
+      dockerfile: openclaw/Dockerfile
+    image: openclaw-gateway:local
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    user: "node"
+    ports:
+      - "127.0.0.1:18789:18789"
+    environment:
+      OPENCLAW_CONFIG_PATH: /etc/openclaw-config/openclaw.json
+      OPENCLAW_STATE_DIR: /var/lib/openclaw
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN is required}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      OPENCLAW_GIT_USER_NAME: ${OPENCLAW_GIT_USER_NAME:-OpenClaw}
+      OPENCLAW_GIT_USER_EMAIL: ${OPENCLAW_GIT_USER_EMAIL:-openclaw@local}
+      GIT_AUTHOR_NAME: ${OPENCLAW_GIT_USER_NAME:-OpenClaw}
+      GIT_AUTHOR_EMAIL: ${OPENCLAW_GIT_USER_EMAIL:-openclaw@local}
+      GIT_COMMITTER_NAME: ${OPENCLAW_GIT_USER_NAME:-OpenClaw}
+      GIT_COMMITTER_EMAIL: ${OPENCLAW_GIT_USER_EMAIL:-openclaw@local}
+    volumes:
+      - ${HOME}/.openclawctl:/etc/openclaw-config
+      - openclaw_state:/var/lib/openclaw
+    healthcheck:
+      test: ["CMD", "node", "-e", "const c=new AbortController();setTimeout(()=>c.abort(),4500);fetch('http://127.0.0.1:18789/health',{signal:c.signal}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1));"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+    develop:
+      watch:
+        - action: rebuild
+          path: ../openclawctl
+
+  openclaw-cli:
+    image: openclaw-gateway:local
+    profiles: ["tools"]
+    user: "node"
+    entrypoint: ["node", "openclaw.mjs"]
+    command: ["onboard"]
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN is required}
+      OPENCLAW_CONFIG_PATH: /etc/openclaw-config/openclaw.json
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      OPENCLAW_GIT_USER_NAME: ${OPENCLAW_GIT_USER_NAME:-OpenClaw}
+      OPENCLAW_GIT_USER_EMAIL: ${OPENCLAW_GIT_USER_EMAIL:-openclaw@local}
+      GIT_AUTHOR_NAME: ${OPENCLAW_GIT_USER_NAME:-OpenClaw}
+      GIT_AUTHOR_EMAIL: ${OPENCLAW_GIT_USER_EMAIL:-openclaw@local}
+      GIT_COMMITTER_NAME: ${OPENCLAW_GIT_USER_NAME:-OpenClaw}
+      GIT_COMMITTER_EMAIL: ${OPENCLAW_GIT_USER_EMAIL:-openclaw@local}
+    volumes:
+      - ${HOME}/.openclawctl:/etc/openclaw-config
+      - openclaw_state:/var/lib/openclaw
+
+volumes:
+  openclaw_state:

@@ -1,0 +1,101 @@
+apiVersion: openclawctl/v1
+metadata:
+  name: openclaw-codex-oauth-dev
+  description: YAML-first OpenClaw manifest aligned to official docs (Codex OAuth + gpt-5.3-codex)
+  labels:
+    source.docs: docs.openclaw.ai
+    auth: oauth
+    model: openai-codex/gpt-5.3-codex
+
+# Runtime gateway (container bind is LAN; host publish is loopback-only via compose/docker port mapping)
+gateway:
+  mode: local
+  bind: 0.0.0.0
+  port: 18789
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+  health:
+    path: /health
+    intervalSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Model provider for OpenAI Codex OAuth
+providers:
+  codex_oauth:
+    type: openai-codex
+    model: gpt-5.3-codex
+    options:
+      authMode: oauth
+      profileId: openai-codex:default
+    retry:
+      attempts: 3
+      initialMillis: 500
+      maxMillis: 5000
+    timeout:
+      connectSeconds: 10
+      readSeconds: 120
+      totalSeconds: 180
+
+channels:
+  default:
+    provider: codex_oauth
+    model: gpt-5.3-codex
+    enabled: true
+    priority: 100
+    maxTokens: 32768
+    temperature: 0.2
+    streaming: true
+    systemPrompt: You are a pragmatic coding assistant.
+    headers:
+      x-team: ${OPENCLAW_TEAM:-local}
+
+routing:
+  defaultChannel: default
+
+# OpenClaw runtime chat channel config (rendered to openclaw.json -> channels.*)
+chatChannels:
+  discord:
+    enabled: true
+    # Token is resolved by OpenClaw runtime from DISCORD_BOT_TOKEN env.
+    # (official docs support env fallback for default Discord account)
+    dm:
+      enabled: true
+      policy: pairing
+    groupPolicy: allowlist
+    # guilds:
+    #   "123456789012345678":
+    #     channels:
+    #       "234567890123456789":
+    #         allow: true
+
+plugins:
+  enabled: true
+  entries:
+    # Bundled example: loaded plugin control via YAML
+    copilot-proxy:
+      enabled: true
+      # config:
+      #   # plugin-specific settings (if needed)
+      #   # exampleKey: exampleValue
+
+auth:
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+  allowedCIDRs:
+  - 127.0.0.1/32
+  - ::1/128
+
+logging:
+  level: info
+  format: json
+  structured: true
+  fields:
+    service: openclaw
+    env: ${OPENCLAW_ENV:-dev}
+
+runtime:
+  containerName: openclaw-gateway
+  image: openclaw-gateway:local
+  composeFile: openclaw/docker-compose.dev.yaml
+  configPath: ${HOME}/.openclawctl/openclaw.json
+  stateDir: /var/lib/openclaw
+  stateVolume: openclaw_state
