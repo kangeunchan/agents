@@ -214,3 +214,42 @@ func TestBuildOpenClawConfigIncludesChatChannels(t *testing.T) {
 		t.Fatalf("expected channels.discord.dm.policy=pairing, got %#v", dm["policy"])
 	}
 }
+
+func TestBuildOpenClawConfigIncludesCommandsConfig(t *testing.T) {
+	manifest := &v1.Manifest{
+		APIVersion: "openclawctl/v1",
+		Metadata: v1.Metadata{
+			Name: "commands-config",
+		},
+		Gateway: v1.GatewayConfig{
+			Mode:     "local",
+			Bind:     "127.0.0.1",
+			Port:     18789,
+			TokenEnv: "OPENCLAW_GATEWAY_TOKEN",
+		},
+		Commands: map[string]any{
+			"native":          "auto",
+			"useAccessGroups": false,
+			"allowFrom": map[string]any{
+				"discord": []any{"123456789012345678"},
+			},
+		},
+	}
+
+	cfg := BuildOpenClawConfig(manifest)
+	commands, ok := cfg["commands"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected commands map, got %#v", cfg["commands"])
+	}
+	if commands["useAccessGroups"] != false {
+		t.Fatalf("expected commands.useAccessGroups=false, got %#v", commands["useAccessGroups"])
+	}
+	allowFrom, ok := commands["allowFrom"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected commands.allowFrom map, got %#v", commands["allowFrom"])
+	}
+	discordAllow, ok := allowFrom["discord"].([]any)
+	if !ok || len(discordAllow) != 1 || discordAllow[0] != "123456789012345678" {
+		t.Fatalf("unexpected commands.allowFrom.discord: %#v", allowFrom["discord"])
+	}
+}

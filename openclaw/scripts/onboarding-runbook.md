@@ -5,6 +5,12 @@
 - Docker daemon running.
 - Go `1.25.x` installed.
 - `OPENCLAW_GATEWAY_TOKEN` exported.
+- If using Discord channel integration:
+  - `DISCORD_BOT_TOKEN` exported.
+  - Optional channel pinning by env:
+    - `OPENCLAW_DISCORD_GROUP_POLICY=allowlist`
+    - `OPENCLAW_DISCORD_GUILD_ID=<guild snowflake>`
+    - `OPENCLAW_DISCORD_CHANNEL_ID=<channel snowflake>`
 - Optional but recommended for clean `git commit` metadata from exec tool:
   - `OPENCLAW_GIT_USER_NAME` exported.
   - `OPENCLAW_GIT_USER_EMAIL` exported.
@@ -71,7 +77,27 @@ Open:
 - `http://127.0.0.1:18789/`
 - `http://127.0.0.1:18789/#token=<OPENCLAW_GATEWAY_TOKEN>`
 
-## 9. Rollback
+## 9. Discord Command Authorization
+
+If Discord replies `You are not authorized to use this command.`:
+
+1. Ensure command access groups are disabled at root `commands.useAccessGroups: false` in `manifast.yaml`.
+2. If needed, explicitly set operator allowlist:
+
+```yaml
+commands:
+  allowFrom:
+    discord:
+      - "${OPENCLAW_DISCORD_OPERATOR_ID}"
+```
+
+3. Re-apply:
+
+```bash
+openclawctl --file ~/Develop/agents/openclaw/manifast.yaml --profile dev apply --mode auto
+```
+
+## 10. Rollback
 
 1. Restore previous manifest.
 2. Re-render config.
@@ -82,7 +108,7 @@ openclawctl render -o ~/.openclawctl/openclaw.json
 openclawctl apply --mode auto
 ```
 
-## 10. Shutdown
+## 11. Shutdown
 
 ```bash
 openclawctl --file ~/Develop/agents/openclaw/manifast.yaml --profile dev down

@@ -13,6 +13,7 @@ type Manifest struct {
 	Providers    map[string]ProviderConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
 	Channels     map[string]ChannelConfig  `yaml:"channels,omitempty" json:"channels,omitempty"`
 	Routing      RoutingConfig             `yaml:"routing,omitempty" json:"routing,omitempty"`
+	Commands     map[string]any            `yaml:"commands,omitempty" json:"commands,omitempty"`
 	ChatChannels map[string]map[string]any `yaml:"chatChannels,omitempty" json:"chatChannels,omitempty"`
 	Agents       AgentsConfig              `yaml:"agents,omitempty" json:"agents,omitempty"`
 	Plugins      PluginsConfig             `yaml:"plugins,omitempty" json:"plugins,omitempty"`

@@ -52,23 +52,35 @@ channels:
 routing:
   defaultChannel: default
 
+commands:
+  native: auto
+  nativeSkills: auto
+  # Current OpenClaw build checks access groups at root commands scope.
+  useAccessGroups: false
+  # Optional: restrict command operators explicitly by Discord user ID.
+  # allowFrom:
+  #   discord:
+  #     - "${OPENCLAW_DISCORD_OPERATOR_ID}"
+
 # OpenClaw runtime chat channel config (rendered to openclaw.json -> channels.*)
 chatChannels:
   discord:
     enabled: true
     # Token is resolved by OpenClaw runtime from DISCORD_BOT_TOKEN env.
     # (official docs support env fallback for default Discord account)
+    commands:
+      native: true
     dm:
       enabled: true
       policy: pairing
-    # "allowlist" blocks every guild channel unless explicitly listed below.
-    # Use "open" to allow guild channels by default.
-    groupPolicy: open
-    # guilds:
-    #   "123456789012345678":
-    #     channels:
-    #       "234567890123456789":
-    #         allow: true
+    # 공식 문서 권장: guild/channel allowlist로 명시 제어.
+    # 기본은 open 유지, 필요 시 OPENCLAW_DISCORD_GROUP_POLICY=allowlist 로 전환.
+    groupPolicy: ${OPENCLAW_DISCORD_GROUP_POLICY:-open}
+    guilds:
+      "${OPENCLAW_DISCORD_GUILD_ID:-100000000000000000}":
+        channels:
+          "${OPENCLAW_DISCORD_CHANNEL_ID:-100000000000000000}":
+            allow: true
 
 plugins:
   enabled: true

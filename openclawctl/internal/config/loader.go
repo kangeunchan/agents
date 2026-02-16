@@ -141,15 +141,34 @@ func resolveEnvPlaceholders(v any, path string) (any, error) {
 	case map[string]any:
 		out := map[string]any{}
 		for key, value := range typed {
-			nextPath := key
+			resolvedKey, err := ExpandEnvString(key)
+			if err != nil {
+				keyPath := key
+				if path != "" {
+					keyPath = path + ".<key:" + key + ">"
+				}
+				return nil, fmt.Errorf("%w at %s", err, keyPath)
+			}
+			if strings.TrimSpace(resolvedKey) == "" {
+				keyPath := key
+				if path != "" {
+					keyPath = path + ".<key:" + key + ">"
+				}
+				return nil, fmt.Errorf("resolved map key is empty at %s", keyPath)
+			}
+
+			nextPath := resolvedKey
 			if path != "" {
-				nextPath = path + "." + key
+				nextPath = path + "." + resolvedKey
 			}
 			resolved, err := resolveEnvPlaceholders(value, nextPath)
 			if err != nil {
 				return nil, err
 			}
-			out[key] = resolved
+			if _, exists := out[resolvedKey]; exists {
+				return nil, fmt.Errorf("duplicate map key %q after env expansion at %s", resolvedKey, path)
+			}
+			out[resolvedKey] = resolved
 		}
 		return out, nil
 	case []any:

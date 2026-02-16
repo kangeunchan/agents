@@ -287,6 +287,96 @@ channels:
 	}
 }
 
+func TestLoadManifestEnvPlaceholderInMapKey(t *testing.T) {
+	t.Setenv("OPENCLAW_DISCORD_GUILD_ID", "123456789012345678")
+	t.Setenv("OPENCLAW_DISCORD_CHANNEL_ID", "234567890123456789")
+
+	dir := t.TempDir()
+	manifest := `
+apiVersion: openclawctl/v1
+metadata:
+  name: test-manifest
+gateway:
+  mode: local
+  bind: 127.0.0.1
+  port: 18789
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+chatChannels:
+  discord:
+    enabled: true
+    groupPolicy: allowlist
+    guilds:
+      ${OPENCLAW_DISCORD_GUILD_ID}:
+        channels:
+          ${OPENCLAW_DISCORD_CHANNEL_ID}:
+            allow: true
+`
+	path := filepath.Join(dir, "base.yaml")
+	if err := os.WriteFile(path, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadManifest(LoadOptions{File: path, Profile: "dev"})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	discord, ok := loaded.ChatChannels["discord"]
+	if !ok {
+		t.Fatalf("expected chatChannels.discord, got %#v", loaded.ChatChannels)
+	}
+	guildsRaw, ok := discord["guilds"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected guilds map, got %#v", discord["guilds"])
+	}
+	guildRaw, ok := guildsRaw["123456789012345678"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected expanded guild key, got %#v", guildsRaw)
+	}
+	channelsRaw, ok := guildRaw["channels"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected channels map, got %#v", guildRaw["channels"])
+	}
+	if _, ok := channelsRaw["234567890123456789"]; !ok {
+		t.Fatalf("expected expanded channel key, got %#v", channelsRaw)
+	}
+}
+
+func TestLoadManifestEnvPlaceholderMissingInMapKey(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `
+apiVersion: openclawctl/v1
+metadata:
+  name: test-manifest
+gateway:
+  mode: local
+  bind: 127.0.0.1
+  port: 18789
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+chatChannels:
+  discord:
+    enabled: true
+    groupPolicy: allowlist
+    guilds:
+      ${OPENCLAW_DISCORD_GUILD_ID}:
+        channels:
+          "111":
+            allow: true
+`
+	path := filepath.Join(dir, "base.yaml")
+	if err := os.WriteFile(path, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadManifest(LoadOptions{File: path, Profile: "dev"})
+	if err == nil {
+		t.Fatal("expected unresolved env error for map key")
+	}
+	if !strings.Contains(err.Error(), "OPENCLAW_DISCORD_GUILD_ID") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadManifestEnvNameFieldRejectsPlainString(t *testing.T) {
 	dir := t.TempDir()
 	manifest := `

@@ -19,6 +19,9 @@ func BuildOpenClawConfig(manifest *v1.Manifest) map[string]any {
 	if models := buildModelsConfig(manifest); len(models) > 0 {
 		cfg["models"] = models
 	}
+	if commands := buildCommandsConfig(manifest); len(commands) > 0 {
+		cfg["commands"] = commands
+	}
 	if channels := buildChatChannelsConfig(manifest); len(channels) > 0 {
 		cfg["channels"] = channels
 	}
@@ -36,6 +39,13 @@ func BuildOpenClawConfig(manifest *v1.Manifest) map[string]any {
 	}
 
 	return cfg
+}
+
+func buildCommandsConfig(manifest *v1.Manifest) map[string]any {
+	if manifest == nil || len(manifest.Commands) == 0 {
+		return nil
+	}
+	return cloneAnyMap(manifest.Commands)
 }
 
 func buildChatChannelsConfig(manifest *v1.Manifest) map[string]any {
