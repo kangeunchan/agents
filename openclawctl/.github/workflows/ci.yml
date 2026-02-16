@@ -1,0 +1,78 @@
+name: openclawctl-ci
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'openclawctl/**'
+      - 'openclaw/**'
+  pull_request:
+    paths:
+      - 'openclawctl/**'
+      - 'openclaw/**'
+
+concurrency:
+  group: openclawctl-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MIN_COVERAGE: "25.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+
+      - name: Go mod tidy check
+        working-directory: openclawctl
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: fmt check
+        working-directory: openclawctl
+        run: |
+          FILES=$(gofmt -l ./cmd ./internal)
+          test -z "$FILES"
+
+      - name: go vet
+        working-directory: openclawctl
+        run: go vet ./...
+
+      - name: staticcheck
+        working-directory: openclawctl
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: go test
+        working-directory: openclawctl
+        run: go test ./...
+
+      - name: go test -race
+        working-directory: openclawctl
+        run: go test -race ./...
+
+      - name: coverage gate
+        working-directory: openclawctl
+        run: |
+          go test -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+          TOTAL=$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3, 1, length($3)-1)}')
+          awk -v total="$TOTAL" -v min="$MIN_COVERAGE" 'BEGIN { if (total+0 < min+0) { printf("coverage %.1f%% is below %.1f%%\n", total, min); exit 1 } else { printf("coverage %.1f%% >= %.1f%%\n", total, min) } }'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Buildx builder stage validation (multi-arch, no push)
+        run: docker buildx build --platform linux/amd64,linux/arm64 --target openclawctl-builder --output=type=cacheonly -f openclaw/Dockerfile .
+
+      - name: Buildx runtime image validation (amd64, no push)
+        run: docker buildx build --platform linux/amd64 --load -f openclaw/Dockerfile .
