@@ -53,7 +53,8 @@ routing:
   defaultChannel: default
 
 commands:
-  native: auto
+  # Disable native slash commands globally.
+  native: false
   nativeSkills: auto
   # Current OpenClaw build checks access groups at root commands scope.
   useAccessGroups: false
@@ -69,18 +70,20 @@ chatChannels:
     # Token is resolved by OpenClaw runtime from DISCORD_BOT_TOKEN env.
     # (official docs support env fallback for default Discord account)
     commands:
-      native: true
+      # Disable Discord slash-command registration for chat-only workflow.
+      native: false
     dm:
       enabled: true
       policy: pairing
-    # 공식 문서 권장: guild/channel allowlist로 명시 제어.
-    # 기본은 open 유지, 필요 시 OPENCLAW_DISCORD_GROUP_POLICY=allowlist 로 전환.
-    groupPolicy: ${OPENCLAW_DISCORD_GROUP_POLICY:-open}
+    # Dedicated-channel mode: allow only explicitly listed guild/channel.
+    groupPolicy: ${OPENCLAW_DISCORD_GROUP_POLICY:-allowlist}
     guilds:
       "${OPENCLAW_DISCORD_GUILD_ID:-100000000000000000}":
+        requireMention: false
         channels:
           "${OPENCLAW_DISCORD_CHANNEL_ID:-100000000000000000}":
             allow: true
+            requireMention: false
 
 plugins:
   enabled: true
