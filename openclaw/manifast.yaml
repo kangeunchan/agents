@@ -61,7 +61,9 @@ chatChannels:
     dm:
       enabled: true
       policy: pairing
-    groupPolicy: allowlist
+    # "allowlist" blocks every guild channel unless explicitly listed below.
+    # Use "open" to allow guild channels by default.
+    groupPolicy: open
     # guilds:
     #   "123456789012345678":
     #     channels:
