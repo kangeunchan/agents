@@ -14,6 +14,7 @@ type Manifest struct {
 	Channels     map[string]ChannelConfig  `yaml:"channels,omitempty" json:"channels,omitempty"`
 	Routing      RoutingConfig             `yaml:"routing,omitempty" json:"routing,omitempty"`
 	Commands     map[string]any            `yaml:"commands,omitempty" json:"commands,omitempty"`
+	Tools        map[string]any            `yaml:"tools,omitempty" json:"tools,omitempty"`
 	ChatChannels map[string]map[string]any `yaml:"chatChannels,omitempty" json:"chatChannels,omitempty"`
 	Agents       AgentsConfig              `yaml:"agents,omitempty" json:"agents,omitempty"`
 	Plugins      PluginsConfig             `yaml:"plugins,omitempty" json:"plugins,omitempty"`
@@ -171,7 +172,8 @@ type AgentsConfig struct {
 }
 
 type AgentDefaultsConfig struct {
-	MemorySearch MemorySearchConfig `yaml:"memorySearch,omitempty" json:"memorySearch,omitempty"`
+	ThinkingDefault string             `yaml:"thinkingDefault,omitempty" json:"thinkingDefault,omitempty"`
+	MemorySearch    MemorySearchConfig `yaml:"memorySearch,omitempty" json:"memorySearch,omitempty"`
 }
 
 type MemorySearchConfig struct {
@@ -246,13 +248,14 @@ type Rotation struct {
 }
 
 type RuntimeConfig struct {
-	ContainerName string `yaml:"containerName,omitempty" json:"containerName,omitempty"`
-	Image         string `yaml:"image,omitempty" json:"image,omitempty"`
-	ComposeFile   string `yaml:"composeFile,omitempty" json:"composeFile,omitempty"`
-	ConfigPath    string `yaml:"configPath,omitempty" json:"configPath,omitempty"`
-	StateDir      string `yaml:"stateDir,omitempty" json:"stateDir,omitempty"`
-	StateVolume   string `yaml:"stateVolume,omitempty" json:"stateVolume,omitempty"`
-	WorkspaceDir  string `yaml:"workspaceDir,omitempty" json:"workspaceDir,omitempty"`
+	ContainerName      string `yaml:"containerName,omitempty" json:"containerName,omitempty"`
+	Image              string `yaml:"image,omitempty" json:"image,omitempty"`
+	ComposeFile        string `yaml:"composeFile,omitempty" json:"composeFile,omitempty"`
+	ConfigPath         string `yaml:"configPath,omitempty" json:"configPath,omitempty"`
+	StateDir           string `yaml:"stateDir,omitempty" json:"stateDir,omitempty"`
+	StateVolume        string `yaml:"stateVolume,omitempty" json:"stateVolume,omitempty"`
+	WorkspaceDir       string `yaml:"workspaceDir,omitempty" json:"workspaceDir,omitempty"`
+	ExecApprovalPreset string `yaml:"execApprovalPreset,omitempty" json:"execApprovalPreset,omitempty"`
 }
 
 func (m *Manifest) ApplyDefaults() {

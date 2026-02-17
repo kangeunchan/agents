@@ -428,3 +428,35 @@ gateway:
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLoadManifestEnvOverridesThinkingAndExecApproval(t *testing.T) {
+	t.Setenv("OPENCLAWCTL_THINKING_DEFAULT", "extra-high")
+	t.Setenv("OPENCLAWCTL_EXEC_APPROVAL_PRESET", "per-command")
+
+	dir := t.TempDir()
+	manifest := `
+apiVersion: openclawctl/v1
+metadata:
+  name: test-manifest
+gateway:
+  mode: local
+  bind: 127.0.0.1
+  port: 18789
+  tokenEnv: ${OPENCLAW_GATEWAY_TOKEN}
+`
+	path := filepath.Join(dir, "base.yaml")
+	if err := os.WriteFile(path, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadManifest(LoadOptions{File: path, Profile: "dev"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loaded.Agents.Defaults.ThinkingDefault != "extra-high" {
+		t.Fatalf("unexpected agents.defaults.thinkingDefault: %q", loaded.Agents.Defaults.ThinkingDefault)
+	}
+	if loaded.Runtime.ExecApprovalPreset != "per-command" {
+		t.Fatalf("unexpected runtime.execApprovalPreset: %q", loaded.Runtime.ExecApprovalPreset)
+	}
+}

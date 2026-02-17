@@ -253,3 +253,94 @@ func TestBuildOpenClawConfigIncludesCommandsConfig(t *testing.T) {
 		t.Fatalf("unexpected commands.allowFrom.discord: %#v", allowFrom["discord"])
 	}
 }
+
+func TestBuildOpenClawConfigExecApprovalPresetMapping(t *testing.T) {
+	cases := []struct {
+		name     string
+		preset   string
+		security string
+		ask      string
+	}{
+		{name: "full", preset: "full", security: "full", ask: "off"},
+		{name: "partial", preset: "partial", security: "allowlist", ask: "on-miss"},
+		{name: "per-command", preset: "per-command", security: "allowlist", ask: "always"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest := &v1.Manifest{
+				APIVersion: "openclawctl/v1",
+				Metadata: v1.Metadata{
+					Name: "exec-approval-" + tc.name,
+				},
+				Gateway: v1.GatewayConfig{
+					Mode:     "local",
+					Bind:     "127.0.0.1",
+					Port:     18789,
+					TokenEnv: "OPENCLAW_GATEWAY_TOKEN",
+				},
+				Tools: map[string]any{
+					"exec": map[string]any{
+						"allowlist": []any{"git status"},
+					},
+				},
+				Runtime: v1.RuntimeConfig{
+					ExecApprovalPreset: tc.preset,
+				},
+			}
+
+			cfg := BuildOpenClawConfig(manifest)
+			tools, ok := cfg["tools"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected tools map, got %#v", cfg["tools"])
+			}
+			execCfg, ok := tools["exec"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected tools.exec map, got %#v", tools["exec"])
+			}
+			if execCfg["security"] != tc.security {
+				t.Fatalf("unexpected tools.exec.security: got=%#v want=%q", execCfg["security"], tc.security)
+			}
+			if execCfg["ask"] != tc.ask {
+				t.Fatalf("unexpected tools.exec.ask: got=%#v want=%q", execCfg["ask"], tc.ask)
+			}
+			allowlist, ok := execCfg["allowlist"].([]any)
+			if !ok || len(allowlist) != 1 || allowlist[0] != "git status" {
+				t.Fatalf("unexpected tools.exec.allowlist: %#v", execCfg["allowlist"])
+			}
+		})
+	}
+}
+
+func TestBuildOpenClawConfigNormalizesThinkingDefault(t *testing.T) {
+	manifest := &v1.Manifest{
+		APIVersion: "openclawctl/v1",
+		Metadata: v1.Metadata{
+			Name: "thinking-default",
+		},
+		Gateway: v1.GatewayConfig{
+			Mode:     "local",
+			Bind:     "127.0.0.1",
+			Port:     18789,
+			TokenEnv: "OPENCLAW_GATEWAY_TOKEN",
+		},
+		Agents: v1.AgentsConfig{
+			Defaults: v1.AgentDefaultsConfig{
+				ThinkingDefault: "extra-high",
+			},
+		},
+	}
+
+	cfg := BuildOpenClawConfig(manifest)
+	agents, ok := cfg["agents"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected agents map, got %#v", cfg["agents"])
+	}
+	defaults, ok := agents["defaults"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected agents.defaults map, got %#v", agents["defaults"])
+	}
+	if defaults["thinkingDefault"] != "xhigh" {
+		t.Fatalf("unexpected agents.defaults.thinkingDefault: %#v", defaults["thinkingDefault"])
+	}
+}

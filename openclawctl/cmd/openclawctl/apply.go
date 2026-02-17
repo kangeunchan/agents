@@ -101,7 +101,7 @@ func applyViaRPC(ctx context.Context, client *runtime.GatewayClient, desired map
 		return fmt.Errorf("rpc apply failed: %w", err)
 	}
 
-	if err := healthCheck(ctx, client); err != nil {
+	if err := waitForGatewayHealthyAfterRPCApply(ctx, client); err != nil {
 		rollbackErr := client.ApplyConfig(ctx, liveConfig)
 		reloadErr := client.Reload(ctx)
 		if rollbackErr != nil || reloadErr != nil {
@@ -110,6 +110,27 @@ func applyViaRPC(ctx context.Context, client *runtime.GatewayClient, desired map
 		return fmt.Errorf("health check failed after rpc apply, rolled back: %w", err)
 	}
 	return nil
+}
+
+func waitForGatewayHealthyAfterRPCApply(ctx context.Context, client *runtime.GatewayClient) error {
+	var lastErr error
+
+	for {
+		if err := healthCheck(ctx, client); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("%w (last error: %v)", ctx.Err(), lastErr)
+			}
+			return ctx.Err()
+		case <-time.After(1500 * time.Millisecond):
+		}
+	}
 }
 
 func applyViaFile(ctx context.Context, configPath string, desired []byte, containerName string) error {

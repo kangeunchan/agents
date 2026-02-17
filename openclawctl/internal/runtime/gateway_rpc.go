@@ -113,15 +113,28 @@ func IsRPCTransportUnsupported(err error) bool {
 			return true
 		}
 	}
+	text := strings.ToLower(err.Error())
+	if strings.Contains(text, "unsupported protocol scheme") ||
+		strings.Contains(text, "websocket: bad handshake") ||
+		strings.Contains(text, "method not allowed") {
+		return true
+	}
 	return false
 }
 
 func NewGatewayClient(rpcURL, token string) *GatewayClient {
 	if strings.TrimSpace(rpcURL) == "" {
+		rpcURL = os.Getenv("OPENCLAW_GATEWAY_URL")
+	}
+	if strings.TrimSpace(rpcURL) == "" {
 		rpcURL = os.Getenv("OPENCLAW_GATEWAY_RPC_URL")
 	}
 	if strings.TrimSpace(rpcURL) == "" {
-		rpcURL = "http://127.0.0.1:18789/rpc"
+		rpcURL = "ws://127.0.0.1:18789"
+	}
+	rpcURL = strings.TrimSpace(rpcURL)
+	if !strings.Contains(rpcURL, "://") {
+		rpcURL = "ws://" + strings.TrimPrefix(rpcURL, "//")
 	}
 	if strings.TrimSpace(token) == "" {
 		token = os.Getenv("OPENCLAW_GATEWAY_TOKEN")
@@ -275,22 +288,33 @@ func (c *GatewayClient) Health(ctx context.Context) error {
 }
 
 func (c *GatewayClient) call(ctx context.Context, method string, params any, out any) error {
-	httpErr := c.callHTTP(ctx, method, params, out)
-	if httpErr == nil {
-		return nil
-	}
-	if !IsRPCTransportUnsupported(httpErr) {
-		return httpErr
-	}
-
 	wsErr := c.callWS(ctx, method, params, out)
 	if wsErr == nil {
 		return nil
 	}
-	if IsRPCTransportUnsupported(wsErr) {
-		return fmt.Errorf("%w: http=%v; ws=%v", ErrRPCTransportUnsupported, httpErr, wsErr)
+
+	if c.usesWebSocketOnly() {
+		if IsRPCTransportUnsupported(wsErr) {
+			return fmt.Errorf("%w: ws=%v", ErrRPCTransportUnsupported, wsErr)
+		}
+		return wsErr
 	}
-	return fmt.Errorf("http rpc unsupported (%v); websocket fallback failed: %w", httpErr, wsErr)
+
+	httpErr := c.callHTTP(ctx, method, params, out)
+	if httpErr == nil {
+		return nil
+	}
+
+	if IsRPCTransportUnsupported(wsErr) && IsRPCTransportUnsupported(httpErr) {
+		return fmt.Errorf("%w: ws=%v; http=%v", ErrRPCTransportUnsupported, wsErr, httpErr)
+	}
+	if IsRPCTransportUnsupported(wsErr) {
+		return fmt.Errorf("websocket rpc unsupported (%v); http fallback failed: %w", wsErr, httpErr)
+	}
+	if IsRPCTransportUnsupported(httpErr) {
+		return fmt.Errorf("websocket rpc failed: %v; http rpc unsupported: %w", wsErr, httpErr)
+	}
+	return fmt.Errorf("websocket rpc failed: %v; http fallback failed: %w", wsErr, httpErr)
 }
 
 func (c *GatewayClient) callHTTP(ctx context.Context, method string, params any, out any) error {
@@ -354,10 +378,33 @@ func (c *GatewayClient) callHTTP(ctx context.Context, method string, params any,
 }
 
 func (c *GatewayClient) callWS(ctx context.Context, method string, params any, out any) error {
-	wsURL, err := c.wsURL()
+	wsURLs, err := c.wsURLs()
 	if err != nil {
-		return fmt.Errorf("resolve websocket url: %w", err)
+		return fmt.Errorf("resolve websocket urls: %w", err)
 	}
+
+	var attempts []string
+	for i, wsURL := range wsURLs {
+		err := c.callWSURL(ctx, wsURL, method, params, out)
+		if err == nil {
+			return nil
+		}
+
+		wrapped := fmt.Errorf("ws %s: %w", wsURL, err)
+		attempts = append(attempts, wrapped.Error())
+		if i < len(wsURLs)-1 && shouldTryAlternateWSEndpoint(err) {
+			continue
+		}
+		return wrapped
+	}
+
+	if len(attempts) > 0 {
+		return fmt.Errorf("all websocket endpoints failed: %s", strings.Join(attempts, "; "))
+	}
+	return fmt.Errorf("no websocket endpoints available")
+}
+
+func (c *GatewayClient) callWSURL(ctx context.Context, wsURL string, method string, params any, out any) error {
 
 	identity, err := loadOrCreateDeviceIdentity()
 	if err != nil {
@@ -396,6 +443,9 @@ func (c *GatewayClient) callWS(ctx context.Context, method string, params any, o
 				return fmt.Errorf("%w: %w", ErrRPCTransportUnsupported, statusErr)
 			}
 			return statusErr
+		}
+		if isLikelyWSTransportUnsupportedError(err) {
+			return fmt.Errorf("%w: ws dial failed: %v", ErrRPCTransportUnsupported, err)
 		}
 		return fmt.Errorf("ws dial failed: %w", err)
 	}
@@ -731,10 +781,10 @@ func (c *GatewayClient) uiURL() (string, error) {
 	return c.endpointURL("")
 }
 
-func (c *GatewayClient) wsURL() (string, error) {
+func (c *GatewayClient) wsURLs() ([]string, error) {
 	u, err := url.Parse(c.RPCURL)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
 	case "http":
@@ -744,20 +794,58 @@ func (c *GatewayClient) wsURL() (string, error) {
 	case "ws", "wss":
 		// keep as-is
 	default:
-		return "", fmt.Errorf("unsupported rpc url scheme: %s", u.Scheme)
-	}
-	if strings.TrimSpace(u.Path) == "" {
-		u.Path = "/rpc"
+		return nil, fmt.Errorf("unsupported rpc url scheme: %s", u.Scheme)
 	}
 	u.RawQuery = ""
 	u.Fragment = ""
-	return u.String(), nil
+
+	paths := []string{}
+	addPath := func(p string) {
+		if strings.TrimSpace(p) == "" {
+			p = "/"
+		}
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		for _, existing := range paths {
+			if existing == p {
+				return
+			}
+		}
+		paths = append(paths, p)
+	}
+
+	rawPath := strings.TrimSpace(u.Path)
+	switch rawPath {
+	case "", "/":
+		addPath("/")
+		addPath("/rpc")
+	case "/rpc":
+		addPath("/rpc")
+		addPath("/")
+	default:
+		addPath(rawPath)
+	}
+
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		candidate := *u
+		candidate.Path = p
+		out = append(out, candidate.String())
+	}
+	return out, nil
 }
 
 func (c *GatewayClient) endpointURL(leaf string) (string, error) {
 	u, err := url.Parse(c.RPCURL)
 	if err != nil {
 		return "", err
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
 	}
 	if strings.TrimSpace(leaf) == "" {
 		u.Path = "/"
@@ -809,6 +897,41 @@ func isPairingParamMismatch(err error) bool {
 		strings.Contains(text, "missing parameter") ||
 		strings.Contains(text, "missing field") ||
 		strings.Contains(text, "expected field")
+}
+
+func shouldTryAlternateWSEndpoint(err error) bool {
+	if err == nil {
+		return false
+	}
+	if IsRPCTransportUnsupported(err) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "websocket: bad handshake") ||
+		strings.Contains(text, "unexpected eof") ||
+		strings.Contains(text, "connection reset by peer")
+}
+
+func isLikelyWSTransportUnsupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "unexpected eof") ||
+		strings.Contains(text, "bad handshake")
+}
+
+func (c *GatewayClient) usesWebSocketOnly() bool {
+	u, err := url.Parse(strings.TrimSpace(c.RPCURL))
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+	case "ws", "wss":
+		return true
+	default:
+		return false
+	}
 }
 
 func randomFrameID() string {

@@ -160,6 +160,20 @@ func ValidateManifest(m *Manifest) error {
 		}
 	}
 
+	if thinking := strings.TrimSpace(m.Agents.Defaults.ThinkingDefault); thinking != "" {
+		if normalizeThinkingLevel(thinking) == "" {
+			errs.Add("agents.defaults.thinkingDefault", "one of [off, minimal, low, medium, high, xhigh, extra-high]", thinking)
+		}
+	}
+
+	if preset := strings.TrimSpace(m.Runtime.ExecApprovalPreset); preset != "" {
+		switch strings.ToLower(preset) {
+		case "full", "partial", "per-command":
+		default:
+			errs.Add("runtime.execApprovalPreset", "one of [full, partial, per-command]", preset)
+		}
+	}
+
 	validatePlugins(errs, &m.Plugins)
 	validateSkills(errs, &m.Skills)
 
@@ -314,4 +328,15 @@ func normalizeNameList(errs *ValidationErrors, path string, values []string) []s
 		out = append(out, normalized)
 	}
 	return out
+}
+
+func normalizeThinkingLevel(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "off", "minimal", "low", "medium", "high", "xhigh":
+		return strings.ToLower(strings.TrimSpace(level))
+	case "extra-high", "extra_high", "extrahigh":
+		return "xhigh"
+	default:
+		return ""
+	}
 }

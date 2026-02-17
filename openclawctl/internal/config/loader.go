@@ -106,6 +106,11 @@ func applyEnvOverrides(raw map[string]any) error {
 		"OPENCLAWCTL_GATEWAY_MODE":      {Path: []string{"gateway", "mode"}, Parse: func(s string) (any, error) { return s, nil }},
 		"OPENCLAWCTL_GATEWAY_BIND":      {Path: []string{"gateway", "bind"}, Parse: func(s string) (any, error) { return s, nil }},
 		"OPENCLAWCTL_GATEWAY_TOKEN_ENV": {Path: []string{"gateway", "tokenEnv"}, Parse: func(s string) (any, error) { return s, nil }},
+		"OPENCLAWCTL_THINKING_DEFAULT":  {Path: []string{"agents", "defaults", "thinkingDefault"}, Parse: func(s string) (any, error) { return s, nil }},
+		"OPENCLAWCTL_EXEC_APPROVAL_PRESET": {
+			Path:  []string{"runtime", "execApprovalPreset"},
+			Parse: func(s string) (any, error) { return s, nil },
+		},
 		"OPENCLAWCTL_RUNTIME_CONFIG_PATH": {
 			Path:  []string{"runtime", "configPath"},
 			Parse: func(s string) (any, error) { return s, nil },

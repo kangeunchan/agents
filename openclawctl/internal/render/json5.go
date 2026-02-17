@@ -22,6 +22,9 @@ func BuildOpenClawConfig(manifest *v1.Manifest) map[string]any {
 	if commands := buildCommandsConfig(manifest); len(commands) > 0 {
 		cfg["commands"] = commands
 	}
+	if tools := buildToolsConfig(manifest); len(tools) > 0 {
+		cfg["tools"] = tools
+	}
 	if channels := buildChatChannelsConfig(manifest); len(channels) > 0 {
 		cfg["channels"] = channels
 	}
@@ -46,6 +49,53 @@ func buildCommandsConfig(manifest *v1.Manifest) map[string]any {
 		return nil
 	}
 	return cloneAnyMap(manifest.Commands)
+}
+
+func buildToolsConfig(manifest *v1.Manifest) map[string]any {
+	if manifest == nil {
+		return nil
+	}
+
+	tools := cloneAnyMap(manifest.Tools)
+	if tools == nil {
+		tools = map[string]any{}
+	}
+	applyExecApprovalPreset(tools, manifest.Runtime.ExecApprovalPreset)
+	if len(tools) == 0 {
+		return nil
+	}
+	return tools
+}
+
+func applyExecApprovalPreset(tools map[string]any, presetRaw string) {
+	preset := strings.ToLower(strings.TrimSpace(presetRaw))
+	if preset == "" {
+		return
+	}
+
+	exec := map[string]any{}
+	switch preset {
+	case "full":
+		exec["security"] = "full"
+		exec["ask"] = "off"
+	case "partial":
+		exec["security"] = "allowlist"
+		exec["ask"] = "on-miss"
+	case "per-command":
+		exec["security"] = "allowlist"
+		exec["ask"] = "always"
+	default:
+		return
+	}
+
+	existingTools, _ := tools["exec"].(map[string]any)
+	if existingTools == nil {
+		existingTools = map[string]any{}
+	}
+	for key, value := range exec {
+		existingTools[key] = value
+	}
+	tools["exec"] = existingTools
 }
 
 func buildChatChannelsConfig(manifest *v1.Manifest) map[string]any {
@@ -289,6 +339,10 @@ func buildAgentsConfig(manifest *v1.Manifest) map[string]any {
 		defaults["memorySearch"] = memorySearch
 	}
 
+	if thinking := normalizeThinkingLevel(manifest.Agents.Defaults.ThinkingDefault); thinking != "" {
+		defaults["thinkingDefault"] = thinking
+	}
+
 	if len(defaults) == 0 {
 		return nil
 	}
@@ -416,6 +470,17 @@ func modelAliasFromRef(modelRef string) string {
 		return ""
 	}
 	return strings.TrimSpace(parts[len(parts)-1])
+}
+
+func normalizeThinkingLevel(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "off", "minimal", "low", "medium", "high", "xhigh":
+		return strings.ToLower(strings.TrimSpace(level))
+	case "extra-high", "extra_high", "extrahigh":
+		return "xhigh"
+	default:
+		return ""
+	}
 }
 
 func mapGatewayMode(mode string) string {

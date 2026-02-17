@@ -558,3 +558,75 @@ func TestUIReachable(t *testing.T) {
 		t.Fatal("expected ui reachable")
 	}
 }
+
+func TestGetConfigFallsBackToRootWebSocketPath(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	client := newGatewayClientForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		if websocket.IsWebSocketUpgrade(r) {
+			if r.URL.Path != "/" {
+				http.NotFound(w, r)
+				return
+			}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				t.Fatalf("upgrade websocket: %v", err)
+			}
+			defer conn.Close()
+
+			completeWSConnectHandshake(t, conn)
+			req := readWSFrame(t, conn)
+			if req["method"] != "config.get" {
+				t.Fatalf("expected config.get request, got: %#v", req)
+			}
+			reqID, _ := req["id"].(string)
+			writeWSFrame(t, conn, map[string]any{
+				"type": "res",
+				"id":   reqID,
+				"ok":   true,
+				"payload": map[string]any{
+					"hash": "h1",
+					"config": map[string]any{
+						"gateway": map[string]any{"mode": "local"},
+					},
+				},
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost && r.URL.Path == "/rpc" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte("Method Not Allowed"))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	cfg, err := client.GetConfig(context.Background())
+	if err != nil {
+		t.Fatalf("GetConfig returned error: %v", err)
+	}
+	gateway, ok := cfg["gateway"].(map[string]any)
+	if !ok || gateway["mode"] != "local" {
+		t.Fatalf("unexpected gateway config: %#v", cfg)
+	}
+}
+
+func TestEndpointURLConvertsWebSocketSchemeToHTTP(t *testing.T) {
+	client := NewGatewayClient("ws://127.0.0.1:18789", "")
+
+	healthURL, err := client.healthURL()
+	if err != nil {
+		t.Fatalf("healthURL error: %v", err)
+	}
+	if healthURL != "http://127.0.0.1:18789/health" {
+		t.Fatalf("unexpected health url: %s", healthURL)
+	}
+
+	uiURL, err := client.uiURL()
+	if err != nil {
+		t.Fatalf("uiURL error: %v", err)
+	}
+	if uiURL != "http://127.0.0.1:18789/" {
+		t.Fatalf("unexpected ui url: %s", uiURL)
+	}
+}

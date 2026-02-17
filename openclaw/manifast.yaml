@@ -52,6 +52,11 @@ channels:
 routing:
   defaultChannel: default
 
+agents:
+  defaults:
+    # off|minimal|low|medium|high|xhigh (extra-high alias supported)
+    thinkingDefault: extra-high
+
 commands:
   # Disable native slash commands globally.
   native: false
@@ -116,3 +121,8 @@ runtime:
   configPath: ${HOME}/.openclawctl/openclaw.json
   stateDir: /var/lib/openclaw
   stateVolume: openclaw_state
+  # Exec command approval policy
+  # full        = no prompt (fully allowed)
+  # partial     = allowlist + prompt on miss
+  # per-command = allowlist + always prompt
+  execApprovalPreset: per-command

@@ -38,7 +38,7 @@ func parseRootArgs(args []string) (command string, commandArgs []string, showVer
 	globalOpts = GlobalOptions{
 		Manifest:      defaultManifestPath(),
 		Profile:       envOr("OPENCLAWCTL_PROFILE", "dev"),
-		GatewayRPCURL: envOr("OPENCLAW_GATEWAY_RPC_URL", "http://127.0.0.1:18789/rpc"),
+		GatewayRPCURL: envOr("OPENCLAW_GATEWAY_URL", envOr("OPENCLAW_GATEWAY_RPC_URL", "ws://127.0.0.1:18789")),
 		GatewayToken:  os.Getenv("OPENCLAW_GATEWAY_TOKEN"),
 		ContainerName: envOr("OPENCLAW_CONTAINER_NAME", "openclaw-gateway"),
 	}
@@ -51,7 +51,7 @@ func parseRootArgs(args []string) (command string, commandArgs []string, showVer
 	fs.StringVar(&globalOpts.Manifest, "f", globalOpts.Manifest, "base manifest file")
 	fs.Var(&overlays, "overlay", "overlay manifest files (repeatable)")
 	fs.StringVar(&globalOpts.Profile, "profile", globalOpts.Profile, "runtime profile (dev|prod)")
-	fs.StringVar(&globalOpts.GatewayRPCURL, "gateway-rpc-url", globalOpts.GatewayRPCURL, "OpenClaw gateway JSON-RPC URL")
+	fs.StringVar(&globalOpts.GatewayRPCURL, "gateway-rpc-url", globalOpts.GatewayRPCURL, "OpenClaw gateway URL (ws/http)")
 	fs.StringVar(&globalOpts.GatewayToken, "gateway-token", globalOpts.GatewayToken, "OpenClaw gateway token")
 	fs.StringVar(&globalOpts.ContainerName, "container-name", globalOpts.ContainerName, "Docker container name")
 	fs.BoolVar(&showVersion, "version", false, "print version")
@@ -93,7 +93,7 @@ Global flags:
   --file, -f             Base manifest file
   --overlay              Overlay manifest file (repeatable)
   --profile              Runtime profile (dev|prod)
-  --gateway-rpc-url      OpenClaw gateway JSON-RPC URL
+  --gateway-rpc-url      OpenClaw gateway URL (ws/http)
   --gateway-token        OpenClaw gateway token
   --container-name       Docker container name
   --version              Print version
